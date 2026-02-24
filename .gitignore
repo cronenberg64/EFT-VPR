@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Data (too large for git)
+data/raw/
+data/processed/
+data/splits/
+
+# Model artifacts
+checkpoints/
+results/
+*.pt
+*.h5
+*.hdf5
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Environment
+.env
+
+# Jupyter
+.ipynb_checkpoints/
+
+# TensorBoard
+runs/

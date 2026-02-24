@@ -1,0 +1,92 @@
+# ============================================================
+# EFT-VPR Configuration
+# ============================================================
+
+# --- Dataset ---
+data:
+  sensor_width: 346
+  sensor_height: 260
+  grid_size: 64                   # Output spatial resolution (64x64)
+  bin_mode: "fixed_count"         # "fixed_count" or "fixed_duration"
+  bin_count: 5000                 # Events per bin (fixed_count mode)
+  bin_duration_ms: 50             # ms per bin (fixed_duration mode)
+  polarity_mode: "binary"        # "binary" (0/1) or "polarity_sum" (2-channel ON/OFF)
+  sequence_length: 10             # Number of past bins in input sequence
+  stride: 1                       # Sliding window stride
+  num_workers: 4                  # DataLoader workers
+  pin_memory: true                # DataLoader pin_memory for GPU transfer
+
+# --- SNN Encoder ---
+encoder:
+  in_channels: 1                  # 1 for binary, 2 for polarity_sum
+  channels: [32, 64, 128]         # Conv2d channel progression
+  kernel_size: 3
+  embedding_dim: 256              # Output embedding dimension D
+  beta: 0.95                      # LIF neuron decay rate (learnable=false)
+  learnable_beta: false
+  spike_grad: "fast_sigmoid"      # Surrogate gradient function
+  slope: 25                       # Surrogate gradient slope
+
+# --- Forecasting Transformer ---
+transformer:
+  d_model: 256                    # Must match encoder.embedding_dim
+  nhead: 8                        # Number of attention heads
+  num_layers: 4                   # Transformer encoder layers
+  dim_feedforward: 1024           # FFN hidden dimension
+  dropout: 0.1
+  max_seq_len: 50                 # Maximum sequence length for positional encoding
+
+# --- Losses ---
+loss:
+  # Triplet loss (encoder)
+  triplet_margin: 0.3
+  positive_threshold_m: 25        # GPS distance (meters) for positive pairs
+  negative_threshold_m: 100       # GPS distance (meters) for negative pairs
+
+  # Temporal Contrastive Loss (transformer)
+  temperature: 0.07               # InfoNCE temperature τ
+  num_negatives: 128              # Number of negative samples per batch
+
+# --- Training ---
+training:
+  # Encoder phase
+  encoder_lr: 1.0e-3
+  encoder_weight_decay: 1.0e-4
+  encoder_epochs: 100
+  encoder_batch_size: 64
+
+  # Transformer phase (frozen encoder)
+  transformer_lr: 1.0e-3
+  transformer_weight_decay: 1.0e-4
+  transformer_epochs: 100
+  transformer_batch_size: 64
+
+  # End-to-end fine-tuning
+  finetune_lr: 1.0e-4             # 10x lower for encoder
+  finetune_epochs: 50
+
+  # Shared
+  scheduler: "cosine"             # "cosine" or "step"
+  warmup_epochs: 5
+  gradient_clip: 1.0
+  seed: 42
+
+# --- VPR / FAISS ---
+vpr:
+  index_type: "IVFFlat"           # "Flat", "IVFFlat", or "IVFPQ"
+  nlist: 100                      # Number of Voronoi cells (IVF)
+  nprobe: 10                      # Cells to search at query time
+  top_k: [1, 5, 10, 20]          # Recall@N values to compute
+
+# --- Robustness ---
+robustness:
+  dropout_frames: [10, 15, 20]    # Number of frames to drop
+  autoregressive: true            # Feed predictions back as input
+
+# --- Paths ---
+paths:
+  raw_data: "data/raw"
+  processed_data: "data/processed"
+  checkpoints: "checkpoints"
+  results: "results"
+  tensorboard: "runs"

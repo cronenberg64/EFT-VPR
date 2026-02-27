@@ -84,6 +84,87 @@ def train_encoder(config: dict, data_path: str, device: torch.device):
     logger.info(f"Training complete: {results}")
 
 
+def train_transformer(config: dict, data_path: str, device: torch.device, freeze_encoder: bool = True):
+    """Train the Forecasting Transformer (frozen or end-to-end)."""
+    from src.models.snn_encoder import SNNEncoder, SNNEncoderConfig
+    from src.models.forecasting_transformer import ForecastingTransformer, TransformerConfig
+    from src.training.train_transformer import TransformerTrainer
+    from src.training.train_encoder import EncoderTrainer
+    from src.data.sequence_dataset import create_dataloader
+
+    # Load pre-trained encoder
+    checkpoints_dir = Path(config.get("paths", {}).get("checkpoints", "checkpoints"))
+    encoder_ckpt = checkpoints_dir / "encoder_best.pt"
+    if not encoder_ckpt.exists():
+        encoder_ckpt = checkpoints_dir / "encoder_latest.pt"
+    if not encoder_ckpt.exists():
+        logger.error(f"No encoder checkpoint found in {checkpoints_dir}")
+        logger.info("Train the encoder first: python scripts/train.py --phase encoder")
+        return
+
+    encoder, _ = EncoderTrainer.load_checkpoint(encoder_ckpt, device=device)
+    logger.info(f"Loaded encoder from {encoder_ckpt}")
+
+    # Build transformer
+    transformer_config = TransformerConfig.from_dict(config)
+    transformer = ForecastingTransformer(transformer_config)
+    logger.info(f"Transformer parameters: {transformer.get_num_parameters()}")
+
+    # Build data loaders
+    data_dir = Path(data_path)
+    h5_files = sorted(data_dir.glob("*.h5"))
+    if not h5_files:
+        logger.error(f"No .h5 files found in {data_dir}")
+        return
+
+    split_idx = max(1, int(len(h5_files) * 0.8))
+    train_files = h5_files[:split_idx]
+    val_files = h5_files[split_idx:] if split_idx < len(h5_files) else None
+
+    data_cfg = config.get("data", {})
+    training_cfg = config.get("training", {})
+
+    train_loader = create_dataloader(
+        h5_paths=train_files,
+        sequence_length=data_cfg.get("sequence_length", 10),
+        stride=data_cfg.get("stride", 1),
+        batch_size=training_cfg.get("transformer_batch_size", 64),
+        shuffle=True,
+        num_workers=data_cfg.get("num_workers", 4),
+        pin_memory=data_cfg.get("pin_memory", True),
+        augment=False,
+        normalize="minmax",
+    )
+
+    val_loader = None
+    if val_files:
+        val_loader = create_dataloader(
+            h5_paths=val_files,
+            sequence_length=data_cfg.get("sequence_length", 10),
+            batch_size=training_cfg.get("transformer_batch_size", 64),
+            shuffle=False,
+            augment=False,
+            normalize="minmax",
+        )
+
+    # Train
+    trainer = TransformerTrainer(
+        encoder=encoder,
+        transformer=transformer,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        config=config,
+        device=device,
+        output_dir=str(checkpoints_dir),
+        freeze_encoder=freeze_encoder,
+    )
+
+    phase_name = "frozen encoder" if freeze_encoder else "end-to-end fine-tuning"
+    logger.info(f"Starting transformer training ({phase_name})")
+    results = trainer.train()
+    logger.info(f"Training complete: {results}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="EFT-VPR Training")
     parser.add_argument(
@@ -133,9 +214,9 @@ def main():
     if args.phase == "encoder":
         train_encoder(config, args.data, device)
     elif args.phase == "transformer":
-        logger.info("Transformer training — Phase 3 (not yet implemented)")
+        train_transformer(config, args.data, device, freeze_encoder=True)
     elif args.phase == "finetune":
-        logger.info("End-to-end fine-tuning — Phase 3 (not yet implemented)")
+        train_transformer(config, args.data, device, freeze_encoder=False)
 
 
 logger = logging.getLogger(__name__)

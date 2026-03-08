@@ -19,7 +19,11 @@ data/splits/
 
 # Model artifacts
 checkpoints/
-results/
+results/*
+!results/recall_curves.png
+!results/dropout_error_plot.png
+!results/hallucinated_path.png
+!results/evaluation_results.json
 *.pt
 *.h5
 *.hdf5

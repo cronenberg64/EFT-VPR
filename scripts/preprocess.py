@@ -56,6 +56,9 @@ def load_gps_data(gps_path: Path) -> pd.DataFrame | None:
 
     suffix = gps_path.suffix.lower()
 
+    if suffix == ".nmea":
+        return _parse_nmea(gps_path)
+
     if suffix in (".csv", ".txt"):
         try:
             df = pd.read_csv(gps_path)
@@ -83,6 +86,84 @@ def load_gps_data(gps_path: Path) -> pd.DataFrame | None:
 
     logger.warning(f"Unsupported GPS file format: {suffix}")
     return None
+
+
+def _nmea_to_decimal(coord_str: str, direction: str) -> float:
+    """Convert NMEA coordinate (DDMM.MMMMM) to decimal degrees."""
+    if not coord_str:
+        return 0.0
+    # Find the split point: degrees are everything before the last MM.MMMM
+    dot_idx = coord_str.index(".")
+    degrees = float(coord_str[:dot_idx - 2])
+    minutes = float(coord_str[dot_idx - 2:])
+    decimal = degrees + minutes / 60.0
+    if direction in ("S", "W"):
+        decimal = -decimal
+    return decimal
+
+
+def _parse_nmea(nmea_path: Path) -> pd.DataFrame | None:
+    """Parse NMEA file to extract GPS coordinates.
+
+    Extracts $GPRMC sentences which contain time, lat, lon.
+    Timestamps are converted to microseconds to match event timestamps.
+
+    Args:
+        nmea_path: Path to .nmea file.
+
+    Returns:
+        DataFrame with timestamp, latitude, longitude or None.
+    """
+    records = []
+    try:
+        with open(nmea_path, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line.startswith("$GPRMC"):
+                    continue
+                parts = line.split(",")
+                if len(parts) < 7 or parts[2] != "A":  # A = valid fix
+                    continue
+                try:
+                    # Parse time: HHMMSS.SS
+                    time_str = parts[1]
+                    hours = int(time_str[0:2])
+                    mins = int(time_str[2:4])
+                    secs = float(time_str[4:])
+                    time_of_day_us = int((hours * 3600 + mins * 60 + secs) * 1e6)
+
+                    # Parse date: DDMMYY (field 9)
+                    date_str = parts[9] if len(parts) > 9 else ""
+                    if date_str:
+                        day = int(date_str[0:2])
+                        month = int(date_str[2:4])
+                        year = 2000 + int(date_str[4:6])
+                        # Convert to epoch microseconds (UTC)
+                        import datetime
+                        dt = datetime.datetime(year, month, day,
+                                               tzinfo=datetime.timezone.utc)
+                        epoch_us = int(dt.timestamp() * 1e6) + time_of_day_us
+                    else:
+                        epoch_us = time_of_day_us
+
+                    lat = _nmea_to_decimal(parts[3], parts[4])
+                    lon = _nmea_to_decimal(parts[5], parts[6])
+                    records.append((epoch_us, lat, lon))
+                except (ValueError, IndexError):
+                    continue
+
+        if not records:
+            logger.warning(f"No valid GPRMC sentences in {nmea_path}")
+            return None
+
+        df = pd.DataFrame(records, columns=["timestamp", "latitude", "longitude"])
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        logger.info(f"Parsed {len(df)} GPS points from {nmea_path.name}")
+        return df
+
+    except Exception as e:
+        logger.warning(f"Failed to parse NMEA file {nmea_path}: {e}")
+        return None
 
 
 def interpolate_gps(
@@ -152,6 +233,14 @@ def preprocess_single_file(
         logger.info(f"Streaming {event_path.name} ({file_size_mb:.0f} MB) in chunks")
         all_bins = []
         for chunk_df in stream_parquet_events(event_path, chunk_size=chunk_size):
+            # Auto-rename Brisbane columns
+            rename_map = {}
+            if "t" in chunk_df.columns and "timestamp" not in chunk_df.columns:
+                rename_map["t"] = "timestamp"
+            if "p" in chunk_df.columns and "polarity" not in chunk_df.columns:
+                rename_map["p"] = "polarity"
+            if rename_map:
+                chunk_df = chunk_df.rename(columns=rename_map)
             chunk_bins = bin_events(chunk_df, config)
             all_bins.extend(chunk_bins)
 
@@ -238,16 +327,40 @@ def preprocess_dataset(
         out_path = output_dir / out_name
 
         # Look for matching GPS file
+        # Brisbane dataset naming: base name is before the first underscore suffix
+        # e.g. dvs_vpr_2020-04-21-17-03-03_no_hot_pixels_nobursts_denoised.parquet
+        #  → GPS: dvs_vpr_2020-04-21-17-03-03.nmea
         gps_path = None
+        # Strategy 1: exact stem match with _gps suffix
         for ext in (".csv", ".txt", ".nmea"):
             candidate = pf.parent / (pf.stem + "_gps" + ext)
             if candidate.exists():
                 gps_path = candidate
                 break
-            candidate = pf.parent / (pf.stem + ext)
-            if candidate.exists():
-                gps_path = candidate
-                break
+        # Strategy 2: exact stem match
+        if gps_path is None:
+            for ext in (".csv", ".txt", ".nmea"):
+                candidate = pf.parent / (pf.stem + ext)
+                if candidate.exists():
+                    gps_path = candidate
+                    break
+        # Strategy 3: Brisbane convention — strip suffixes to find base name
+        if gps_path is None:
+            base_stem = pf.stem
+            # Try progressively shorter names to find the NMEA
+            for suffix_to_strip in [
+                "_no_hot_pixels_nobursts_denoised",
+                "_nobursts_denoised",
+                "_denoised",
+            ]:
+                if base_stem.endswith(suffix_to_strip):
+                    base_stem = base_stem[:-len(suffix_to_strip)]
+                    break
+            for ext in (".nmea", ".csv", ".txt"):
+                candidate = pf.parent / (base_stem + ext)
+                if candidate.exists():
+                    gps_path = candidate
+                    break
 
         stats = preprocess_single_file(
             event_path=pf,

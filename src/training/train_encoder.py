@@ -99,7 +99,7 @@ class EncoderTrainer:
         )
         cosine_scheduler = CosineAnnealingWarmRestarts(
             self.optimizer,
-            T_0=(self.epochs - warmup_epochs) * steps_per_epoch,
+            T_0=max(1, (self.epochs - warmup_epochs) * steps_per_epoch),
             T_mult=1,
         )
         self.scheduler = SequentialLR(
@@ -305,16 +305,38 @@ class EncoderTrainer:
         latest_path = self.output_dir / "encoder_latest.pt"
         torch.save(checkpoint, latest_path)
 
-    def train(self) -> dict:
+    def resume_from_checkpoint(self, checkpoint_path: str | Path):
+        """Resume training from a saved checkpoint.
+
+        Restores model weights, optimizer, scheduler, and epoch state.
+
+        Args:
+            checkpoint_path: Path to checkpoint .pt file.
+        """
+        checkpoint = torch.load(checkpoint_path, map_location=self.device, weights_only=False)
+        self.model.load_state_dict(checkpoint["model_state_dict"])
+        self.optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+        self.start_epoch = checkpoint["epoch"] + 1
+        self.global_step = self.start_epoch * len(self.train_loader)
+        self.best_val_loss = checkpoint["metrics"].get("val_loss",
+                             checkpoint["metrics"].get("loss", float("inf")))
+        logger.info(f"Resumed from {checkpoint_path} (epoch {self.start_epoch})")
+
+    def train(self, start_epoch: int = 0) -> dict:
         """Run the full training loop.
+
+        Args:
+            start_epoch: Epoch to start from (used when resuming).
 
         Returns:
             Dict with final training statistics.
         """
-        logger.info(f"Starting encoder training for {self.epochs} epochs")
+        start_epoch = getattr(self, 'start_epoch', start_epoch)
+        logger.info(f"Starting encoder training from epoch {start_epoch + 1} to {self.epochs}")
         start_time = time.time()
 
-        for epoch in range(self.epochs):
+        for epoch in range(start_epoch, self.epochs):
             # Train
             train_metrics = self.train_epoch(epoch)
 

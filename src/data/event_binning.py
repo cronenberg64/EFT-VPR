@@ -410,6 +410,17 @@ def load_parquet_events(
     logger.info(f"Loading events from {filepath}")
     df = pd.read_parquet(filepath)
 
+    # Auto-rename common alternative column names
+    # Brisbane Event VPR dataset uses: t, x, y, p
+    rename_map = {}
+    if "t" in df.columns and "timestamp" not in df.columns:
+        rename_map["t"] = "timestamp"
+    if "p" in df.columns and "polarity" not in df.columns:
+        rename_map["p"] = "polarity"
+    if rename_map:
+        df = df.rename(columns=rename_map)
+        logger.info(f"Auto-renamed columns: {rename_map}")
+
     # Validate columns
     missing = set(required_columns) - set(df.columns)
     if missing:

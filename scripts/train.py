@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 
-def train_encoder(config: dict, data_path: str, device: torch.device):
+def train_encoder(config: dict, data_path: str, device: torch.device, resume_from: str = None):
     """Train the SNN Encoder with triplet loss."""
     from src.models.snn_encoder import SNNEncoder, SNNEncoderConfig
     from src.training.train_encoder import EncoderTrainer
@@ -65,7 +65,7 @@ def train_encoder(config: dict, data_path: str, device: torch.device):
             h5_paths=val_files,
             sequence_length=data_cfg.get("sequence_length", 10),
             batch_size=training_cfg.get("encoder_batch_size", 64),
-            shuffle=False,
+            shuffle=True,  # Crucial for contrastive/triplet metrics
             augment=False,
             normalize="minmax",
         )
@@ -79,6 +79,10 @@ def train_encoder(config: dict, data_path: str, device: torch.device):
         device=device,
         output_dir=config.get("paths", {}).get("checkpoints", "checkpoints"),
     )
+
+    # Resume from checkpoint if specified
+    if resume_from:
+        trainer.resume_from_checkpoint(resume_from)
 
     results = trainer.train()
     logger.info(f"Training complete: {results}")
@@ -142,7 +146,7 @@ def train_transformer(config: dict, data_path: str, device: torch.device, freeze
             h5_paths=val_files,
             sequence_length=data_cfg.get("sequence_length", 10),
             batch_size=training_cfg.get("transformer_batch_size", 64),
-            shuffle=False,
+            shuffle=True,  # Crucial for in-batch negatives (TCL loss)
             augment=False,
             normalize="minmax",
         )
@@ -182,6 +186,8 @@ def main():
                         help="Override learning rate from config")
     parser.add_argument("--device", type=str, default=None,
                         help="Device (cuda/cpu)")
+    parser.add_argument("--resume", type=str, default=None,
+                        help="Path to checkpoint to resume training from")
     parser.add_argument("-v", "--verbose", action="store_true")
 
     args = parser.parse_args()
@@ -212,7 +218,7 @@ def main():
 
     # Dispatch
     if args.phase == "encoder":
-        train_encoder(config, args.data, device)
+        train_encoder(config, args.data, device, resume_from=args.resume)
     elif args.phase == "transformer":
         train_transformer(config, args.data, device, freeze_encoder=True)
     elif args.phase == "finetune":

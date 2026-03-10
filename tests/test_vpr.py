@@ -1,5 +1,5 @@
 """
-Unit tests for Phase 4: VPR Integration.
+Unit tests for VPR Integration.
 
 Tests FAISS map database, inference pipeline, sensor dropout robustness,
 and standard vs forecasting VPR comparison with synthetic data.

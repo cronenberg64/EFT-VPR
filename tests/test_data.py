@@ -1,5 +1,5 @@
 """
-Unit tests for the data pipeline (Phase 1).
+Unit tests for the data pipeline.
 
 Tests event binning, transforms, sequence dataset, and preprocessing.
 Uses synthetic data — no real dataset required.

@@ -31,6 +31,7 @@ EFT-VPR/
 │   ├── train.py                  # Unified training entry point
 │   └── evaluate.py               # Full benchmark suite
 ├── notebooks/results.ipynb       # Visualization & results
+├── results/                      # Evaluation metrics & plots
 └── tests/                        # 132 unit tests (all passing)
 ```
 
@@ -126,7 +127,7 @@ By acting as a generative model and predicting its own future embeddings, EFT-VP
 
 ## Future Improvements
 
-To push the performance of EFT-VPR to the absolute state-of-the-art:
+For future improvements or as reference for future works:
 
 1. **Higher Spatial Resolution**: The current pipeline aggressively downsamples 346x260 event grids to 64x64. Upgrading the grid size to `128x128` will preserve high-frequency features (building edges, signs) and drastically improve base VPR metrics.
 2. **Deeper Spiking Architectures**: Replace the 3-layer Convolutional SNN with a deep residual Spiking Neural Network (e.g., `Spiking ResNet-18` or `SEW-ResNet`) to extract more robust 256-dimensional embeddings.

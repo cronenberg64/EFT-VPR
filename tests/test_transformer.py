@@ -1,5 +1,5 @@
 """
-Unit tests for Phase 3: Forecasting Transformer and Temporal Contrastive Loss.
+Unit tests for Forecasting Transformer and Temporal Contrastive Loss.
 
 Tests architecture, causal masking, autoregressive prediction,
 InfoNCE loss properties, and integration with the SNN encoder.

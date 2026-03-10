@@ -1,5 +1,5 @@
 """
-Unit tests for Phase 5: Evaluation Metrics.
+Unit tests for Evaluation Metrics.
 
 Tests Recall@N, MLE, EvaluationResult, and summary generation.
 """

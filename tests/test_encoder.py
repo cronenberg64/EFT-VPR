@@ -1,5 +1,5 @@
 """
-Unit tests for Phase 2: SNN Encoder and Triplet Loss.
+Unit tests for SNN Encoder and Triplet Loss.
 
 Tests model architecture, forward/backward pass, embedding properties,
 GPS triplet mining, and checkpoint save/load.
